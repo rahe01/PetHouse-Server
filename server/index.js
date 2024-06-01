@@ -6,7 +6,7 @@ const cookieParser = require('cookie-parser')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const jwt = require('jsonwebtoken')
 
-const port = process.env.PORT || 8000
+const port = process.env.PORT || 5000
 
 // middleware
 const corsOptions = {
@@ -36,7 +36,7 @@ const verifyToken = async (req, res, next) => {
   })
 }
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@main.mq0mae1.mongodb.net/?retryWrites=true&w=majority&appName=Main`
+const uri =  `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ncq0h0t.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -47,6 +47,9 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
+
+    const usersCollection = client.db("Petenica").collection("users");
+    const petsCollection = client.db("Petenica").collection("pets");
     // auth related api
     app.post('/jwt', async (req, res) => {
       const user = req.body
@@ -61,6 +64,72 @@ async function run() {
         })
         .send({ success: true })
     })
+
+      // save user data in db
+
+      app.put("/user", async (req, res) => {
+        const user = req.body;
+        const query = { email: user?.email };
+  
+        const isExist = await usersCollection.findOne(query);
+        if (isExist) {
+          if (user.status === "Requested") {
+            const result = await usersCollection.updateOne(query, {
+              $set: { status: user?.status },
+            });
+            return res.send(result);
+          } else {
+            return res.send(isExist);
+          }
+        }
+  
+        const option = { upsert: true };
+  
+        const updateDoc = {
+          $set: {
+            ...user,
+            timeStamp: Date.now(),
+          },
+        };
+        const result = await usersCollection.updateOne(query, updateDoc, option);
+        res.send(result);
+      });
+
+
+      // save pet in db
+
+      app.post("/pets", async (req, res) => {
+        const pet = req.body;
+        const result = await petsCollection.insertOne(pet);
+        res.send(result);
+      });
+
+      app.get("/pets/:email", async (req, res) => {
+        const email = req.params.email;
+        const query = { email: email };
+        const result = await petsCollection.find(query).toArray();
+        res.send(result);
+      })
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     // Logout
     app.get('/logout', async (req, res) => {
       try {
