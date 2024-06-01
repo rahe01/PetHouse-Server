@@ -50,6 +50,7 @@ async function run() {
 
     const usersCollection = client.db("Petenica").collection("users");
     const petsCollection = client.db("Petenica").collection("pets");
+    const donationsCollection = client.db("Petenica").collection("donations");
     // auth related api
     app.post('/jwt', async (req, res) => {
       const user = req.body
@@ -104,13 +105,54 @@ async function run() {
         res.send(result);
       });
 
-      app.get("/pets/:email", async (req, res) => {
-        const email = req.params.email;
-        const query = { email: email };
-        const result = await petsCollection.find(query).toArray();
-        res.send(result);
-      })
+      // get pets by email
 
+      app.get("/my-pets/:email", async (req, res) => {
+        try {
+          const email = req.params.email;
+          const query = { 'userEmail': email };
+          const result = await petsCollection.find(query).toArray();
+          res.send(result);
+        } catch (error) {
+          console.error("Error fetching data:", error);
+          res.status(500).send("Internal Server Error");
+        }
+      });
+
+      // update pets
+
+      app.get("/pets/:id", async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const pet = await petsCollection.findOne(filter);
+        if (!pet) {
+            return res.status(404).send({ message: "Pet not found" });
+        }
+        res.send(pet);
+    });
+    
+    app.put("/pets/:id", async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = { $set: req.body };
+        const result = await petsCollection.updateOne(filter, updateDoc);
+        res.send(result);
+    });
+
+    // delet pet 
+    app.delete("/pets/:id", async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await petsCollection.deleteOne(query);
+        res.send(result);
+    });
+    
+    // add donation-campaigns
+    app.post("/donation-campaigns", async (req, res) => {
+        const donation = req.body;
+        const result = await donationsCollection.insertOne(donation);
+        res.send(result);
+    });
 
 
 
