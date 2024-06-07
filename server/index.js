@@ -54,6 +54,7 @@ async function run() {
     const petsCollection = client.db("Petenica").collection("pets");
     const donationsCollection = client.db("Petenica").collection("donations");
     const adoptCollection = client.db("Petenica").collection("adopt");
+    const donateCollection = client.db("Petenica").collection("donate");
     // auth related api
     app.post("/jwt", async (req, res) => {
       const user = req.body;
@@ -156,9 +157,12 @@ async function run() {
       res.send(result);
     });
 
-    // get donation-campaigns
-    app.get("/donation-campaigns", async (req, res) => {
-      const result = await donationsCollection.find({}).toArray();
+    // get donation-campaigns by email
+
+    app.get("/donation-campaigns/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { "userEmail": email };
+      const result = await donationsCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -176,9 +180,15 @@ async function run() {
     //  not adopted pet api
 
     app.get("/notadopted", async (req, res) => {
-      const result = await petsCollection.find({ adopted: false }).toArray();
-      res.send(result);
-    });
+      try {
+          const result = await petsCollection.find({ adopted: "false" }).toArray();
+          res.send(result);
+      } catch (error) {
+          console.error('Error fetching not adopted pets:', error);
+          res.status(500).send('Error fetching not adopted pets');
+      }
+  });
+  
 
     // get pet by id
 
@@ -198,7 +208,7 @@ async function run() {
       const adopt = req.body;
       // update adopted: true in pets collection
       const filter = { _id: new ObjectId(adopt.petId) };
-      const updateDoc = { $set: { adopted: true } };
+      const updateDoc = { $set: { adopted: 'request' } };
       const result = await petsCollection.updateOne(filter, updateDoc);
       // save adopt data in adopt collection
       const result2 = await adoptCollection.insertOne(adopt);
@@ -253,6 +263,208 @@ async function run() {
     })
 
 
+
+    // post user donate
+    app.post('/user-donate' , async (req, res) => {
+      const donation = req.body;
+      const result = await donateCollection.insertOne(donation);
+      res.send(result);
+    })
+
+    // get user donate
+    app.get('/user-donate' , async (req, res) => {
+      const result = await donationsCollection.find({}).toArray();
+      res.send(result);
+    })
+
+    // get donation
+    app.get('/donation-campaigns/:id' , async (req, res) => {
+      const id = req.params.id;
+      const result = await donationsCollection.findOne({ _id: new ObjectId(id) });
+      res.send(result);
+    })
+
+    // edit donation
+    app.put('/donation-campaignsss/:id' , async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const donation = req.body;
+      const option = { upsert: true };
+      const updateDoc = {
+        $set: {
+          petName: donation.petName,
+      
+          petPicture: donation.petPicture,
+          maxDonationAmount : donation.maxDonationAmount,
+          lastDate : donation.lastDate,
+          shortDescription : donation.shortDescription,
+          longDescription : donation.longDescription
+        },
+      };
+      const result = await donationsCollection.updateOne(filter, updateDoc, option);
+      res.send(result);
+    })
+
+
+    // get donate by email
+
+    app.get("/my-donate/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const result = await donateCollection.find(filter).toArray();
+      res.send(result);
+    });
+
+
+    // delet my donate
+    app.delete("/my-donate/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await donateCollection.deleteOne(query);
+      res.send(result);
+    });
+
+
+    
+
+
+
+// get /adoption-requests/${user.email}
+app.get('/adoption-requests/:email', async (req, res) => {
+  const email = req.params.email;
+  try {
+      const filter = { userEmail: email };
+      const pets = await petsCollection.find(filter).toArray();
+      const petIds = pets.map(pet => pet._id.toString());
+      const requests = await adoptCollection.find({ petId: { $in: petIds } }).toArray();
+      res.send(requests);
+  } catch (error) {
+      console.error('Error fetching adoption requests:', error);
+      res.status(500).send('Error fetching adoption requests');
+  }
+});
+
+// Accept an adoption request
+app.post('/adoption-requests/accept/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+      const request = await adoptCollection.findOne({ _id: new ObjectId(id) });
+      if (!request) {
+          res.status(404).send('Request not found');
+          return;
+      }
+      const petId = request.petId;
+      await petsCollection.updateOne(
+          { _id: new ObjectId(petId) },
+          { $set: { adopted: true } }
+      );
+      await adoptCollection.deleteMany({ petId: petId });
+      res.send('Adoption request accepted');
+  } catch (error) {
+      console.error('Error accepting adoption request:', error);
+      res.status(500).send('Error accepting adoption request');
+  }
+});
+
+// Reject an adoption request
+app.post('/adoption-requests/reject/:id', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+      // Find the adoption request to get the petId
+      const request = await adoptCollection.findOne({ _id: new ObjectId(id) });
+      if (!request) {
+          res.status(404).send('Request not found');
+          return;
+      }
+
+      const petId = request.petId;
+
+      // Delete the adoption request
+      const result = await adoptCollection.deleteOne({ _id: new ObjectId(id) });
+      if (result.deletedCount === 0) {
+          res.status(404).send('Request not found');
+          return;
+      }
+
+      // Update the adoption status of the pet
+      await petsCollection.updateOne({ _id: new ObjectId(petId) }, { $set: { adopted: 'false' } });
+
+      res.send('Adoption request rejected');
+  } catch (error) {
+      console.error('Error rejecting adoption request:', error);
+      res.status(500).send('Error rejecting adoption request');
+  }
+});
+
+
+
+    // 
+    // get user email from db
+    app.get("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const result = await usersCollection.findOne(query);
+      res.send(result);
+    });
+
+
+    // get all user
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find({}).toArray();
+      res.send(result);
+    })
+
+    // update user role
+    app.put("/admin/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const option = { upsert: true };
+      const updateDoc = {
+        $set: {
+          role: "admin",
+        },
+      };
+      const result = await usersCollection.updateOne(filter, updateDoc, option);
+      res.send(result);
+    });
+
+    // all add pet
+    app.get("/all-pets", async (req, res) => {
+      const result = await petsCollection.find({}).toArray();
+      res.send(result);
+    })
+
+    // delet pet
+    app.delete("/all-pets/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await petsCollection.deleteOne(query);
+      res.send(result);
+    })
+
+// Update pet adoption status
+app.put("/all-pets/:id", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body; // Expecting "true" or "false" as a string
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = {
+      $set: {
+          adopted: status,
+      },
+  };
+  const result = await petsCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+
+
+
+
+  
+    
+
+
     // Logout
     app.get("/logout", async (req, res) => {
       try {
@@ -281,9 +493,9 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("Hello from StayVista Server..");
+  res.send("Hello from  Server..");
 });
 
 app.listen(port, () => {
-  console.log(`StayVista is running on port ${port}`);
+  console.log(`is running on port ${port}`);
 });
